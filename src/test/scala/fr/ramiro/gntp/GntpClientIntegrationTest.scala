@@ -66,7 +66,7 @@ class GntpClientIntegrationTest extends FunSuite {
     val notif1 = info.notificationInfos(0)
     val notif2 = info.notificationInfos(1)
 
-    val client: GntpClient = GntpScala(info, growlHost = "localhost", password = GntpPassword("secret"), listener = new GntpClientIntegrationTest.GntpListenerLog)
+    val client: GntpClient = GntpScala(info, growlHost = Some("localhost"), password = GntpPassword("secret"), listener = new GntpClientIntegrationTest.GntpListenerLog)
     client.register
 
     client.notify(GntpNotification(

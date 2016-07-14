@@ -18,8 +18,10 @@ package fr.ramiro.gntp
 import java.net._
 import java.util.concurrent._
 
-import fr.ramiro.gntp.internal.io.NioTcpGntpClient
-import org.slf4j.{ Logger, LoggerFactory }
+import fr.ramiro.gntp.internal.io.{NioTcpGntpClient, RetryParam}
+import org.slf4j.{Logger, LoggerFactory}
+
+import scala.util.{Failure, Success, Try}
 
 object GntpScala {
   val CUSTOM_HEADER_PREFIX: String = "X-"
@@ -33,59 +35,37 @@ object GntpScala {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   private def getTcpPort: Int = {
-    val osName: String = System.getProperty("os.name")
-    if (osName != null && osName.toLowerCase.contains("mac")) {
+    val osName = Option(System.getProperty("os.name"))
+    if (osName.exists(_.toLowerCase.contains("mac"))) {
       GntpScala.logger.debug("using mac port number: " + GntpScala.MAC_TCP_PORT)
       GntpScala.MAC_TCP_PORT
     } else {
-      GntpScala.logger.debug("using the windows port for growl")
+      GntpScala.logger.debug("using the windows port: " + GntpScala.WINDOWS_TCP_PORT)
       GntpScala.WINDOWS_TCP_PORT
     }
   }
 
-  private def getInetAddress(name: String): InetAddress = {
-    if (name == null) {
-      try {
-        return InetAddress.getLocalHost
-      } catch {
-        case e: UnknownHostException => {
-          try {
-            return InetAddress.getByName(name)
-          } catch {
-            case uhe: UnknownHostException => {
-              throw new IllegalStateException("Could not find localhost", uhe)
-            }
-          }
-        }
-      }
+  private def getInetAddress(hostName: Option[String]): InetAddress = hostName match {
+    case Some(name) => Try(InetAddress.getByName(name)) match {
+      case Success(inetAddress) => inetAddress
+      case Failure(exception) => throw new IllegalStateException("Could not find inet address: " + name, exception)
     }
-    try {
-      InetAddress.getByName(name)
-    } catch {
-      case e: UnknownHostException => {
-        throw new IllegalStateException("Could not find inet address: " + name, e)
-      }
-    }
+    case _ => InetAddress.getLocalHost
   }
 
   def apply(
     applicationInfo: GntpApplicationInfo,
-    growlHost: String,
+    growlHost: Option[String],
     growlPort: Int = GntpScala.getTcpPort,
     tcp: Boolean = true,
     executor: Executor = Executors.newCachedThreadPool,
     listener: GntpListener = null,
     password: GntpPassword = null,
-    retryTime: Long = GntpScala.DEFAULT_RETRY_TIME, //0
-    retryTimeUnit: TimeUnit = GntpScala.DEFAULT_RETRY_TIME_UNIT,
-    notificationRetryCount: Int = GntpScala.DEFAULT_NOTIFICATION_RETRIES //0
+    retryParam: Option[RetryParam] = None
   ): GntpClient = {
     assert(null != applicationInfo, "Application info must not be null")
     assert(null != growlHost, "Growl host must not be null")
-    assert(growlPort > 0, "Port must not be negative")
-    assert(retryTime > 0, "Retry time must be greater than zero")
-    assert(null != retryTimeUnit, "Retry time unit must not be null")
-    new NioTcpGntpClient(applicationInfo, GntpScala.getInetAddress(growlHost), growlPort, executor, listener, password, retryTime, retryTimeUnit, notificationRetryCount)
+    new NioTcpGntpClient(applicationInfo, GntpScala.getInetAddress(growlHost), growlPort, executor, listener, password, retryParam)
   }
 }
 
