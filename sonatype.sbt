@@ -1,7 +1,6 @@
-sonatypeProfileName := "fr.ramiro"
 
 pomExtra in Global := {
-  <url>(your project URL)</url>
+  <url>https://github.com/rrramiro/scala-gntp</url>
   <licenses>
     <license>
       <name>Apache 2</name>
@@ -11,13 +10,13 @@ pomExtra in Global := {
   <scm>
     <connection>scm:git@github.com:rrramiro/scala-gntp.git</connection>
     <developerConnection>scm:git@github.com:rrramiro/scala-gntp.git</developerConnection>
-    <url>github.com/rrramiro/scala-gntp/</url>
+    <url>https://github.com/rrramiro/scala-gntp</url>
   </scm>
   <developers>
     <developer>
       <id>rrramiro</id>
       <name>Ramiro Calle</name>
-      <url>ramiro.fr</url>
+      <url>http://ramiro.fr</url>
     </developer>
   </developers>
 }
