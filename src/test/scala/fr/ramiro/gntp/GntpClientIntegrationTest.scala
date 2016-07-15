@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit._
 import javax.imageio._
 
 import fr.ramiro.gntp.internal.GntpErrorStatus.GntpErrorStatus
+import fr.ramiro.gntp.internal.io.NioTcpGntpClient
 import org.scalatest.FunSuite
 import org.slf4j._
 
@@ -23,7 +24,7 @@ object GntpClientIntegrationTest {
   private val logger: Logger = LoggerFactory.getLogger(classOf[GntpClientIntegrationTest])
 
   class GntpListenerLog extends GntpListener {
-    def onRegistrationSuccess = {
+    def onRegistrationSuccess {
       logger.info("Registered")
     }
     def onNotificationSuccess(notification: GntpNotification) {
@@ -66,7 +67,12 @@ class GntpClientIntegrationTest extends FunSuite {
     val notif1 = info.notificationInfos(0)
     val notif2 = info.notificationInfos(1)
 
-    val client: GntpClient = GntpScala(info, growlHost = Some("localhost"), password = GntpPassword("secret"), listener = new GntpClientIntegrationTest.GntpListenerLog)
+    val client: GntpClient = new NioTcpGntpClient(
+      applicationInfo = info,
+      hostName = Some("localhost"),
+      password = GntpPassword("secret"),
+      listener = Some(new GntpClientIntegrationTest.GntpListenerLog)
+    )
     client.register
 
     client.notify(GntpNotification(

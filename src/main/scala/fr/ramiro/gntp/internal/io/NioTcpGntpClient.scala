@@ -16,6 +16,7 @@ import io.netty.util.concurrent.GlobalEventExecutor
 import org.slf4j._
 
 import scala.collection.concurrent.TrieMap
+import scala.util.{ Failure, Success, Try }
 
 class RetryParam(
     val retryTime: Long = GntpScala.DEFAULT_RETRY_TIME, //0
@@ -32,13 +33,13 @@ class RetryParam(
 
 class NioTcpGntpClient(
     applicationInfo: GntpApplicationInfo,
-    growlHost: InetAddress,
-    growlPort: Int,
-    executor: Executor,
-    listener: GntpListener,
+    hostName: Option[String],
+    growlPort: Int = GntpScala.getTcpPort,
+    executor: Executor = Executors.newCachedThreadPool,
+    listener: Option[GntpListener],
     password: GntpPassword,
-    retryParam: Option[RetryParam]
-) extends NioGntpClient(applicationInfo, growlHost, growlPort, password) {
+    retryParam: Option[RetryParam] = None
+) extends NioGntpClient(applicationInfo, GntpScala.getInetAddress(hostName), growlPort, password) {
   val logger: Logger = LoggerFactory.getLogger(classOf[NioTcpGntpClient])
   val group = new NioEventLoopGroup
   private final val bootstrap: Bootstrap = new Bootstrap()
@@ -52,7 +53,7 @@ class NioTcpGntpClient(
   bootstrap.option(ChannelOption.RCVBUF_ALLOCATOR, AdaptiveRecvByteBufAllocator.DEFAULT)
   bootstrap.option(ChannelOption.MESSAGE_SIZE_ESTIMATOR, DefaultMessageSizeEstimator.DEFAULT)
   bootstrap.channel(classOf[NioSocketChannel])
-  bootstrap.handler(new GntpChannelPipelineFactory(new GntpChannelHandler(this, Option(listener))))
+  bootstrap.handler(new GntpChannelPipelineFactory(new GntpChannelHandler(this, listener)))
 
   private final val channelGroup: ChannelGroup = new DefaultChannelGroup("gntp", GlobalEventExecutor.INSTANCE)
   private final val notificationIdGenerator: AtomicLong = new AtomicLong
@@ -102,7 +103,10 @@ class NioTcpGntpClient(
       val count = retry.notificationRetries.getOrElseUpdate(notification, new AtomicInteger(1))
 
       if (count.get() <= retry.notificationRetryCount) {
-        logger.debug("Failed to send notification [{}], retry [{}/{}] in [{}-{}]", Array(notification, count, retry.notificationRetryCount, retry.retryTime, retry.retryTimeUnit))
+        logger.debug(
+          "Failed to send notification [{}], retry [{}/{}] in [{}-{}]",
+          Array(notification, count, retry.notificationRetryCount, retry.retryTime, retry.retryTimeUnit)
+        )
         count.incrementAndGet()
         retry.retryExecutorService.schedule(new Runnable {
           override def run(): Unit = NioTcpGntpClient.this.notify(notification)

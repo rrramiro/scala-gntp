@@ -26,7 +26,7 @@ object GntpCallbackResult extends Enumeration {
 object GntpMessageHeader extends Enumeration {
 
   type GntpMessageHeader = Value
-
+  val HEADER_SPACER = Value("")
   val APPLICATION_NAME = Value("Application-Name")
   val APPLICATION_ICON = Value("Application-Icon")
   val NOTIFICATION_COUNT = Value("Notifications-Count")

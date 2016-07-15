@@ -34,7 +34,7 @@ object GntpScala {
   val DEFAULT_NOTIFICATION_RETRIES: Int = 3
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private def getTcpPort: Int = {
+  def getTcpPort: Int = {
     val osName = Option(System.getProperty("os.name"))
     if (osName.exists(_.toLowerCase.contains("mac"))) {
       GntpScala.logger.debug("using mac port number: " + GntpScala.MAC_TCP_PORT)
@@ -45,7 +45,7 @@ object GntpScala {
     }
   }
 
-  private def getInetAddress(hostName: Option[String]): InetAddress = hostName match {
+  def getInetAddress(hostName: Option[String]): InetAddress = hostName match {
     case Some(name) => Try(InetAddress.getByName(name)) match {
       case Success(inetAddress) => inetAddress
       case Failure(exception) => throw new IllegalStateException("Could not find inet address: " + name, exception)
@@ -53,19 +53,5 @@ object GntpScala {
     case _ => InetAddress.getLocalHost
   }
 
-  def apply(
-    applicationInfo: GntpApplicationInfo,
-    growlHost: Option[String],
-    growlPort: Int = GntpScala.getTcpPort,
-    tcp: Boolean = true,
-    executor: Executor = Executors.newCachedThreadPool,
-    listener: GntpListener = null,
-    password: GntpPassword = null,
-    retryParam: Option[RetryParam] = None
-  ): GntpClient = {
-    assert(null != applicationInfo, "Application info must not be null")
-    assert(null != growlHost, "Growl host must not be null")
-    new NioTcpGntpClient(applicationInfo, GntpScala.getInetAddress(growlHost), growlPort, executor, listener, password, retryParam)
-  }
 }
 

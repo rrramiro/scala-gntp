@@ -11,7 +11,10 @@ import io.netty.channel.{ SimpleChannelInboundHandler, _ }
 import org.slf4j._
 
 @Sharable
-class GntpChannelHandler(gntpClient: NioGntpClient, listener: Option[GntpListener]) extends SimpleChannelInboundHandler[GntpMessageResponse](true) { //SimpleChannelUpstreamHandler{//SimpleChannelInboundHandler[GntpMessageResponse] {
+class GntpChannelHandler(
+    gntpClient: NioGntpClient,
+    listener: Option[GntpListener]
+) extends SimpleChannelInboundHandler[GntpMessageResponse](true) {
   private val logger: Logger = LoggerFactory.getLogger(classOf[GntpChannelHandler])
 
   @throws(classOf[Exception])
@@ -35,7 +38,7 @@ class GntpChannelHandler(gntpClient: NioGntpClient, listener: Option[GntpListene
             handleIOError(cause)
             gntpClient.retryRegistration
           case _: IOException =>
-            handleMessage(new GntpOkMessage(None, GntpMessageType.REGISTER, null)) // TODO Check
+            handleMessage(new GntpOkMessage(None, GntpMessageType.REGISTER, None)) // TODO Check
           case theCause =>
             handleIOError(theCause)
         }
@@ -46,7 +49,6 @@ class GntpChannelHandler(gntpClient: NioGntpClient, listener: Option[GntpListene
   }
 
   private def handleMessage(message: GntpMessageResponse) {
-    assert(message.isInstanceOf[GntpOkMessage] || message.isInstanceOf[GntpCallbackMessage] || message.isInstanceOf[GntpErrorMessage])
     logger.debug("handling message...")
     if (gntpClient.isRegistered) {
       message.internalNotificationId.flatMap { NioGntpClient.notificationsSent.get }

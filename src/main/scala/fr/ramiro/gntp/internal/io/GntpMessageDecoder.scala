@@ -16,15 +16,13 @@ class GntpMessageDecoder extends MessageToMessageDecoder[ByteBuf] {
   private final val parser: GntpMessageResponseParser = new GntpMessageResponseParser
 
   @throws(classOf[Exception])
-  override def decode(ctx: ChannelHandlerContext, msg: ByteBuf, out: util.List[AnyRef]): Unit = {
-    val buffer: ByteBuf = msg
-    val b: Array[Byte] = new Array[Byte](buffer.readableBytes)
+  override def decode(ctx: ChannelHandlerContext, buffer: ByteBuf, out: util.List[AnyRef]): Unit = {
+    val b = new Array[Byte](buffer.readableBytes)
     buffer.readBytes(b)
-    val s: String = new String(b, GntpMessage.ENCODING)
+    val s = new String(b, GntpMessage.ENCODING)
     if (logger.isDebugEnabled) {
       logger.debug("Message received\n{}", s)
     }
-    val response = parser.parse(s)
-    out.add(response)
+    out.add(parser.parse(s))
   }
 }

@@ -1,7 +1,10 @@
 package fr.ramiro.gntp.internal.message
 
+import java.awt.image.RenderedImage
 import java.io.{ ByteArrayOutputStream, OutputStream, OutputStreamWriter }
+import java.net.URI
 
+import fr.ramiro.gntp.internal.GntpMessageHeader._
 import fr.ramiro.gntp.internal.GntpMessageType.GntpMessageType
 import fr.ramiro.gntp.internal.{ GntpMessageHeader, GntpMessageType }
 import fr.ramiro.gntp.{ GntpApplicationInfo, GntpNotification, GntpPassword }
@@ -9,15 +12,17 @@ import fr.ramiro.gntp.{ GntpApplicationInfo, GntpNotification, GntpPassword }
 import scala.language.implicitConversions
 
 abstract class GntpMessageRequest(val `type`: GntpMessageType, password: GntpPassword) extends GntpMessage {
+
   val allHeaders: Seq[(String, HeaderObject)]
 
   def append(output: OutputStream) {
     output.write({
       s"${GntpMessage.PROTOCOL_ID}/${GntpMessage.VERSION} ${`type`.toString} ${password.getEncryptionSpec}" + (
-        if (password.encrypted)
+        if (password.encrypted) {
           s" ${password.keyHashAlgorithm}:${password.keyHash}.${password.salt}${GntpMessage.SEPARATOR}"
-        else
+        } else {
           GntpMessage.SEPARATOR
+        }
       )
     }.getBytes(GntpMessage.ENCODING))
     writeHeaders(allHeaders, output)
@@ -60,69 +65,71 @@ abstract class GntpMessageRequest(val `type`: GntpMessageType, password: GntpPas
     output.write(s"${GntpMessage.SEPARATOR}${GntpMessage.SEPARATOR}".getBytes(GntpMessage.ENCODING))
   }
 
+  def imageValue(value: Either[URI, RenderedImage]): HeaderObject = value match {
+    case Left(uri) => uri
+    case Right(image) => image
+  }
 }
 
-class GntpNotifyMessage(notification: GntpNotification, notificationId: Long, password: GntpPassword) extends GntpMessageRequest(GntpMessageType.NOTIFY, password) {
-  val allHeaders: Seq[(String, HeaderObject)] = Seq(
-    GntpMessageHeader.APPLICATION_NAME.toString -> (notification.applicationName: HeaderObject),
-    GntpMessageHeader.NOTIFICATION_NAME.toString -> (notification.name: HeaderObject),
-    GntpMessageHeader.NOTIFICATION_TITLE.toString -> (notification.title: HeaderObject)
-  ) union notification.id.fold {
-      GntpMessageHeader.NOTIFICATION_ID.toString -> (notificationId: HeaderObject)
+import GntpMessageHeader._
+
+class GntpNotifyMessage(
+    notification: GntpNotification,
+    notificationId: Long,
+    password: GntpPassword
+) extends GntpMessageRequest(GntpMessageType.NOTIFY, password) {
+
+  val allHeaders: Seq[(String, HeaderObject)] = (Seq(
+    APPLICATION_NAME -> (notification.applicationName: HeaderObject),
+    NOTIFICATION_NAME -> (notification.name: HeaderObject),
+    NOTIFICATION_TITLE -> (notification.title: HeaderObject)
+  ) ++ Seq(notification.id.fold {
+      NOTIFICATION_ID -> (notificationId: HeaderObject)
     } { notificationIdVal =>
-      GntpMessageHeader.NOTIFICATION_ID.toString -> (notificationIdVal: HeaderObject)
-    } +: notification.text.map { notificationText =>
-      GntpMessageHeader.NOTIFICATION_TEXT.toString -> (notificationText: HeaderObject)
-    }.toSeq union notification.sticky.map { notificationSticky =>
-      GntpMessageHeader.NOTIFICATION_STICKY.toString -> (notificationSticky: HeaderObject)
-    }.toSeq union notification.priority.map { notificationPriority =>
-      GntpMessageHeader.NOTIFICATION_PRIORITY.toString -> (notification.priority.get.id.toString: HeaderObject)
-    }.toSeq union notification.icon.map {
-      case Left(uri) =>
-        GntpMessageHeader.NOTIFICATION_ICON.toString -> (uri: HeaderObject)
-      case Right(image) =>
-        GntpMessageHeader.NOTIFICATION_ICON.toString -> (image: HeaderObject)
-    }.toSeq union notification.coalescingId.map { notificationCoalescingId =>
-      GntpMessageHeader.NOTIFICATION_COALESCING_ID.toString -> (notificationCoalescingId: HeaderObject)
-    }.toSeq union notification.callbackTarget.fold {
+      NOTIFICATION_ID -> (notificationIdVal: HeaderObject)
+    }) ++ notification.text.map { notificationText =>
+      NOTIFICATION_TEXT -> (notificationText: HeaderObject)
+    } ++ notification.sticky.map { notificationSticky =>
+      NOTIFICATION_STICKY -> (notificationSticky: HeaderObject)
+    } ++ notification.priority.map { notificationPriority =>
+      NOTIFICATION_PRIORITY -> (notification.priority.get.id.toString: HeaderObject)
+    } ++ notification.icon.map { icon =>
+      APPLICATION_ICON -> imageValue(icon)
+    } ++ notification.coalescingId.map { notificationCoalescingId =>
+      NOTIFICATION_COALESCING_ID -> (notificationCoalescingId: HeaderObject)
+    } ++ notification.callbackTarget.fold {
       Seq(
-        GntpMessageHeader.NOTIFICATION_CALLBACK_CONTEXT.toString -> (notificationId: HeaderObject),
-        GntpMessageHeader.NOTIFICATION_CALLBACK_CONTEXT_TYPE.toString -> ("int": HeaderObject)
+        NOTIFICATION_CALLBACK_CONTEXT -> (notificationId: HeaderObject),
+        NOTIFICATION_CALLBACK_CONTEXT_TYPE -> ("int": HeaderObject)
       )
     } { callbackTarget =>
-      Seq(GntpMessageHeader.NOTIFICATION_CALLBACK_TARGET.toString -> callbackTarget)
-    } :+ (
-      GntpMessageHeader.NOTIFICATION_INTERNAL_ID.toString -> (notificationId: HeaderObject)
-    ) union notification.headers :+ ("" -> HeaderSpacer)
+      Seq(NOTIFICATION_CALLBACK_TARGET -> callbackTarget)
+    } ++ Seq(
+      NOTIFICATION_INTERNAL_ID -> (notificationId: HeaderObject)
+    )).map { case (key, value) => key.toString -> value } ++ notification.headers :+ (HEADER_SPACER.toString -> HeaderSpacer)
 
 }
 
 class GntpRegisterMessage(applicationInfo: GntpApplicationInfo, password: GntpPassword) extends GntpMessageRequest(GntpMessageType.REGISTER, password) {
-  val allHeaders: Seq[(String, HeaderObject)] = Seq(
-    GntpMessageHeader.APPLICATION_NAME.toString -> (applicationInfo.name: HeaderObject)
-  ) union applicationInfo.icon.map {
-      case Left(uri) =>
-        GntpMessageHeader.APPLICATION_ICON.toString -> (uri: HeaderObject)
-      case Right(image) =>
-        GntpMessageHeader.APPLICATION_ICON.toString -> (image: HeaderObject)
-    }.toSeq union Seq(
-      GntpMessageHeader.NOTIFICATION_COUNT.toString -> (applicationInfo.notificationInfos.size: HeaderObject),
-      "" -> HeaderSpacer
-    ) union (for (notificationInfo <- applicationInfo.notificationInfos) yield {
+  val allHeaders: Seq[(String, HeaderObject)] = (Seq(
+    APPLICATION_NAME -> (applicationInfo.name: HeaderObject)
+  ) ++ applicationInfo.icon.map { icon =>
+      APPLICATION_ICON -> imageValue(icon)
+    } ++ Seq(
+      NOTIFICATION_COUNT -> (applicationInfo.notificationInfos.size: HeaderObject),
+      HEADER_SPACER -> HeaderSpacer
+    ) ++ applicationInfo.notificationInfos.flatMap { notificationInfo =>
         Seq(
-          GntpMessageHeader.NOTIFICATION_NAME.toString -> (notificationInfo.name: HeaderObject)
-        ) union notificationInfo.displayName.map { notificationInfoDisplayName =>
-            GntpMessageHeader.NOTIFICATION_DISPLAY_NAME.toString -> (notificationInfoDisplayName: HeaderObject)
-          }.toSeq union notificationInfo.icon.map {
-            case Left(uri) =>
-              GntpMessageHeader.NOTIFICATION_ICON.toString -> (uri: HeaderObject)
-            case Right(image) =>
-              GntpMessageHeader.NOTIFICATION_ICON.toString -> (image: HeaderObject)
-          }.toSeq union Seq(
-            GntpMessageHeader.NOTIFICATION_ENABLED.toString -> (notificationInfo.enabled: HeaderObject),
-            "" -> HeaderSpacer
+          NOTIFICATION_NAME -> (notificationInfo.name: HeaderObject)
+        ) ++ notificationInfo.displayName.map { notificationInfoDisplayName =>
+            NOTIFICATION_DISPLAY_NAME -> (notificationInfoDisplayName: HeaderObject)
+          } ++ notificationInfo.icon.map { icon =>
+            APPLICATION_ICON -> imageValue(icon)
+          } ++ Seq(
+            NOTIFICATION_ENABLED -> (notificationInfo.enabled: HeaderObject),
+            HEADER_SPACER -> HeaderSpacer
           )
-      }).flatten
+      }).map { case (key, value) => key.toString -> value }
 
 }
 

@@ -66,9 +66,9 @@ case class GntpPassword(
 
   protected def getSeed: Long = System.currentTimeMillis()
 
-  def encrypt(in: Array[Byte]) = if (encrypted) _cipher.doFinal(in) else in
+  def encrypt(in: Array[Byte]): Array[Byte] = if (encrypted) _cipher.doFinal(in) else in
 
-  def getEncryptionSpec = if (encrypted) GntpPassword.DEFAULT_ALGORITHM + ':' + Hex.toHexadecimal(_iv.getIV) else GntpPassword.NONE_ENCRYPTION_ALGORITHM
+  def getEncryptionSpec: String = if (encrypted) GntpPassword.DEFAULT_ALGORITHM + ':' + Hex.toHexadecimal(_iv.getIV) else GntpPassword.NONE_ENCRYPTION_ALGORITHM
 
   private def getSalt: Seq[Byte] = {
     val random = SecureRandom.getInstance(randomSaltAlgorithm)

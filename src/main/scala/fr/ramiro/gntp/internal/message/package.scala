@@ -28,19 +28,19 @@ package object message {
   }
 
   case class HeaderString(value: String) extends HeaderValue {
-    override def toHeader = value.replaceAll("\r\n", "\n")
+    override def toHeader: String = value.replaceAll("\r\n", "\n")
   }
   case class HeaderNumber(value: Number) extends HeaderValue {
-    override def toHeader = value.toString
+    override def toHeader: String = value.toString
   }
   case class HeaderBoolean(value: Boolean) extends HeaderValue {
-    override def toHeader = value.toString.toLowerCase.capitalize
+    override def toHeader: String = value.toString.toLowerCase.capitalize
   }
   case class HeaderDate(value: Date) extends HeaderValue {
-    override def toHeader = dateFormat.format(value)
+    override def toHeader: String = dateFormat.format(value)
   }
   case class HeaderUri(value: URI) extends HeaderValue {
-    override def toHeader = value.toString
+    override def toHeader: String = value.toString
   }
   case class HeaderInputStream(value: InputStream) extends BinaryHeaderValue {
     val binarySection = new BinarySection(Stream.continually(value.read)
@@ -48,11 +48,11 @@ package object message {
       .map(_.toByte).toArray)
     value.close() //TODO check
 
-    override def toHeader = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
+    override def toHeader: String = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
   }
   case class HeaderArrayBytes(value: Array[Byte]) extends BinaryHeaderValue {
     val binarySection = new BinarySection(value)
-    override def toHeader = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
+    override def toHeader: String = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
   }
   case class HeaderRenderedImage(value: RenderedImage) extends BinaryHeaderValue {
     private val output: ByteArrayOutputStream = new ByteArrayOutputStream
@@ -60,7 +60,7 @@ package object message {
       throw new IllegalStateException("Could not read icon data")
     }
     val binarySection = new BinarySection(output.toByteArray)
-    override def toHeader = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
+    override def toHeader: String = GntpMessage.BINARY_SECTION_PREFIX + binarySection.id
   }
 
   implicit def toHeaderString(field: String): HeaderValue = HeaderString(field)
