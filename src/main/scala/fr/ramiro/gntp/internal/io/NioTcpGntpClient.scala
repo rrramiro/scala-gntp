@@ -1,31 +1,33 @@
 package fr.ramiro.gntp.internal.io
 
 import java.net._
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
-import java.util.concurrent.{Executor, Executors, ScheduledExecutorService, TimeUnit}
+import java.util.concurrent.atomic.{ AtomicInteger, AtomicLong }
+import java.util.concurrent.{ Executor, Executors, ScheduledExecutorService, TimeUnit }
 
-import fr.ramiro.gntp.internal.message.{GntpMessage, GntpNotifyMessage, GntpRegisterMessage}
+import fr.ramiro.gntp.internal.message.{ GntpMessage, GntpNotifyMessage, GntpRegisterMessage }
 import fr.ramiro.gntp._
 import io.netty.bootstrap._
 import io.netty.buffer.UnpooledByteBufAllocator
 import io.netty.channel.group._
 import io.netty.channel.nio.NioEventLoopGroup
 import io.netty.channel.socket.nio.NioSocketChannel
-import io.netty.channel.{AdaptiveRecvByteBufAllocator, _}
+import io.netty.channel.{ AdaptiveRecvByteBufAllocator, _ }
 import io.netty.util.concurrent.GlobalEventExecutor
 import org.slf4j._
 
 import scala.collection.concurrent.TrieMap
 
-case class RetryParam(
-                       retryTime: Long = GntpScala.DEFAULT_RETRY_TIME, //0
-                       retryTimeUnit: TimeUnit = GntpScala.DEFAULT_RETRY_TIME_UNIT,
-                       notificationRetryCount: Int = GntpScala.DEFAULT_NOTIFICATION_RETRIES,
- retryExecutorService: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor
-
-){
+class RetryParam(
+    val retryTime: Long = GntpScala.DEFAULT_RETRY_TIME, //0
+    val retryTimeUnit: TimeUnit = GntpScala.DEFAULT_RETRY_TIME_UNIT,
+    val notificationRetryCount: Int = GntpScala.DEFAULT_NOTIFICATION_RETRIES,
+    val retryExecutorService: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor
+) {
   assert(retryTime > 0, "Retry time must be > 0")
   assert(notificationRetryCount >= 0, "Notification retries must be equal or greater than zero")
+  val notificationRetries = new TrieMap[GntpNotification, AtomicInteger]
+  @volatile
+  var tryingRegistration: Boolean = false
 }
 
 class NioTcpGntpClient(
@@ -53,17 +55,15 @@ class NioTcpGntpClient(
   bootstrap.handler(new GntpChannelPipelineFactory(new GntpChannelHandler(this, Option(listener))))
 
   private final val channelGroup: ChannelGroup = new DefaultChannelGroup("gntp", GlobalEventExecutor.INSTANCE)
-
-  @volatile
-  private var tryingRegistration: Boolean = false
   private final val notificationIdGenerator: AtomicLong = new AtomicLong
-  val notificationRetries = new TrieMap[GntpNotification, AtomicInteger]
+
+  private def initRetry = retryParam.foreach { _.tryingRegistration = false }
 
   protected def doRegister {
     bootstrap.connect(growlHost, growlPort).addListener(new ChannelFutureListener {
       @throws(classOf[Exception])
       def operationComplete(future: ChannelFuture) {
-        tryingRegistration = false
+        initRetry
         if (future.isSuccess) {
           channelGroup.add(future.channel())
           val message: GntpMessage = new GntpRegisterMessage(applicationInfo, password)
@@ -87,23 +87,7 @@ class NioTcpGntpClient(
           val message: GntpMessage = new GntpNotifyMessage(notification, notificationId, password)
           future.channel.writeAndFlush(message)
         } else {
-          retryParam.map { retry =>
-            var count = notificationRetries(notification)
-            if (count == null) {
-              count = new AtomicInteger(1)
-              notificationRetries.put(notification, count)
-            }
-            if (count.get() <= retry.notificationRetryCount) {
-              logger.debug("Failed to send notification [{}], retry [{}/{}] in [{}-{}]", Array(notification, count, retry.notificationRetryCount, retry.retryTime, retry.retryTimeUnit))
-              count.incrementAndGet()
-              retry.retryExecutorService.schedule(new Runnable {
-                override def run(): Unit = NioTcpGntpClient.this.notify(notification)
-              }, retry.retryTime, retry.retryTimeUnit)
-            } else {
-              logger.debug("Failed to send notification [{}], giving up", notification)
-              notificationRetries.remove(notification)
-            }
-          }
+          doRetry(notification)
           NioGntpClient.notificationsSent.find(_._2 == notification).foreach(entity =>
             NioGntpClient.notificationsSent.remove(entity._1))
           future.cause().printStackTrace()
@@ -113,23 +97,42 @@ class NioTcpGntpClient(
     })
   }
 
+  private def doRetry(notification: GntpNotification): Unit = {
+    retryParam.map { retry =>
+      val count = retry.notificationRetries.getOrElseUpdate(notification, new AtomicInteger(1))
+
+      if (count.get() <= retry.notificationRetryCount) {
+        logger.debug("Failed to send notification [{}], retry [{}/{}] in [{}-{}]", Array(notification, count, retry.notificationRetryCount, retry.retryTime, retry.retryTimeUnit))
+        count.incrementAndGet()
+        retry.retryExecutorService.schedule(new Runnable {
+          override def run(): Unit = NioTcpGntpClient.this.notify(notification)
+        }, retry.retryTime, retry.retryTimeUnit)
+      } else {
+        logger.debug("Failed to send notification [{}], giving up", notification)
+        retry.notificationRetries.remove(notification)
+      }
+    }
+  }
+
+  private def closeRetry(timeout: Long, unit: TimeUnit) = retryParam.map { retry =>
+    retry.retryExecutorService.shutdownNow
+    retry.retryExecutorService.awaitTermination(timeout, unit)
+  }
+
   @throws(classOf[InterruptedException])
   protected def doShutdown(timeout: Long, unit: TimeUnit) {
-    retryParam.map { retry =>
-      retry.retryExecutorService.shutdownNow
-      retry.retryExecutorService.awaitTermination(timeout, unit)
-    }
+    closeRetry(timeout, unit)
     channelGroup.close.await(timeout, unit)
   }
 
   def retryRegistration {
-    retryParam.map{ retry =>
-      if ( !tryingRegistration) {
-        tryingRegistration = true
+    retryParam.map { retry =>
+      if (!retry.tryingRegistration) {
+        retry.tryingRegistration = true
         logger.info("Scheduling registration retry in [{}-{}]", retry.retryTime, retry.retryTimeUnit)
         retry.retryExecutorService.schedule(new Runnable {
           override def run() = {
-            register
+            NioTcpGntpClient.this.register
           }
         }, retry.retryTime, retry.retryTimeUnit)
       }

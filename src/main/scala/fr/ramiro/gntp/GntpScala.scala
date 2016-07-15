@@ -18,10 +18,10 @@ package fr.ramiro.gntp
 import java.net._
 import java.util.concurrent._
 
-import fr.ramiro.gntp.internal.io.{NioTcpGntpClient, RetryParam}
-import org.slf4j.{Logger, LoggerFactory}
+import fr.ramiro.gntp.internal.io.{ NioTcpGntpClient, RetryParam }
+import org.slf4j.{ Logger, LoggerFactory }
 
-import scala.util.{Failure, Success, Try}
+import scala.util.{ Failure, Success, Try }
 
 object GntpScala {
   val CUSTOM_HEADER_PREFIX: String = "X-"
